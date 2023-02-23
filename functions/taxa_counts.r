@@ -37,7 +37,7 @@ taxid <- gsub(".*taxid\\|", "", headers)
 
 taxa <- read.table(opt$taxa)
 
-kr <- read.delim(opt$kraken_report, header = F)
+kr <- read.delim(opt$kraken_report, header = FALSE)
 kr <- kr[-c(1:2), ] %>%
   mutate(V8 = trimws(V8)) %>%
   mutate(V8 = str_replace_all(V8, "[^[:alnum:]]", "_"))
@@ -46,7 +46,7 @@ kr.names <- kr$V8 %>%
   trimws() %>%
   str_replace_all("_", " ") %>%
   str_squish()
-mpa <- read.delim(opt$mpa_report, header = F)
+mpa <- read.delim(opt$mpa_report, header = FALSE)
 mpa$taxid <- NA
 
 for (i in 2:nrow(mpa)) {
@@ -58,9 +58,14 @@ for (i in 2:nrow(mpa)) {
     str_replace_all("[^[:alnum:]]", "_")
   mpa$taxid[i] <- paste0("*", paste(kr$V7[match(t_names, kr$V8)], collapse = "*"), "*")
 }
-
-x <- paste0("\\*", taxa$V1, "\\*", collapse = "|")
-ii <- str_which(mpa$taxid, x)
+x <- paste0("\\*", taxa$V1, "\\*")
+future::plan("multicore", workers = 50L)
+ii <- future.apply::future_vapply(mpa$taxid, function(taxid) {
+  any(stringi::stri_detect_regex(taxid, x), na.rm = TRUE)
+}, logical(1L), USE.NAMES = FALSE)
+future::plan("sequential")
+ii <- which(ii)
+cat(ii)
 x <- paste0("\\*", taxa$V1, "\\*.*")
 ii <- sapply(x, function(y) {
   str_extract(mpa$taxid[ii], y) %>%
@@ -83,19 +88,25 @@ s.bc <- bc %>%
   data.frame()
 s.bc$umi <- 1
 s.bc <- s.bc %>%
+  dplyr::filter(if_all(c(barcode, taxid), ~ !is.na(.x))) %>%
+  dplyr::mutate(across(c(barcode, taxid), as.factor)) %>%
   group_by(barcode, taxid) %>%
-  summarize(umi = sum(umi), .groups = "keep") %>%
+  summarize(umi = sum(umi, na.rm = TRUE), .groups = "keep") %>%
   arrange(desc(umi))
 rm(bc)
 
 write.table(s.bc,
-  file = paste0(opt$out_path, opt$sample_name, ".all.barcodes.txt"),
-  quote = F, sep = "\t", row.names = F, col.names = T
+  file = file.path(opt$out_path, paste0(opt$sample_name, ".all.barcodes.txt")),
+  quote = FALSE, sep = "\t", row.names = FALSE, col.names = TRUE
 )
 
-s.mat <- sparseMatrix(as.integer(s.bc$barcode), as.integer(s.bc$taxid), x = s.bc$umi)
-colnames(s.mat) <- levels(s.bc$taxid)
+s.mat <- sparseMatrix(
+  as.integer(s.bc$barcode), 
+  as.integer(s.bc$taxid),
+  x = s.bc$umi
+)
 rownames(s.mat) <- levels(s.bc$barcode)
+colnames(s.mat) <- levels(s.bc$taxid)
 s.mat <- t(s.mat)
 
 print(paste("Started classifying reads for", opt$sample_name))
@@ -103,7 +114,7 @@ print(paste("Started classifying reads for", opt$sample_name))
 # count parent classifications for each read
 df <- list()
 counter <- 0
-for (i in 1:nrow(s.mat)) {
+for (i in seq_len(nrow(s.mat))) {
   print(i)
   if (length(which(kr$V7 == rownames(s.mat)[i])) == 0) {
     next
@@ -123,14 +134,14 @@ for (i in 1:nrow(s.mat)) {
   }
 
   id <- c()
-  for (j in 1:nrow(tax)) {
+  for (j in seq_len(nrow(tax))) {
     id[j] <- kr$V7[kr.names == tax$name[j]]
   }
   tax$id <- id
 
   row <- s.mat[i, ]
   row <- row[row > 0]
-  for (j in 1:nrow(tax)) {
+  for (j in seq_len(nrow(tax))) {
     counter <- counter + 1
     tax2 <- tax[1:j, ]
     df[[counter]] <- tibble(
@@ -149,11 +160,11 @@ for (i in 1:nrow(s.mat)) {
   }
 }
 
-df <- rbindlist(df, use.names = T)
+df <- rbindlist(df, use.names = TRUE)
 
 df <- df %>%
   group_by(barcode, taxid, rank, kingdom, phylum, class, order, family, genus, species) %>%
-  summarize(counts = sum(counts), .groups = "keep") %>%
+  summarize(counts = sum(counts, na.rm = TRUE), .groups = "keep") %>%
   arrange(desc(counts))
 
 # # remove empty barcodes
@@ -167,9 +178,10 @@ df <- df %>%
 # if(length(ind)>0){s.mat = s.mat[-ind, ]}
 
 # save
-write.table(df,
-  file = paste0(opt$out_path, opt$sample_name, ".counts.txt"),
-  quote = F, sep = "\t", row.names = F, col.names = T
+write.table(
+  df,
+  file = file.path(opt$out_path, paste0(opt$sample_name, ".counts.txt")),
+  quote = FALSE, sep = "\t", row.names = FALSE, col.names = TRUE
 )
 
 print("Finished")

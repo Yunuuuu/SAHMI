@@ -14,28 +14,32 @@ option_list <- list(
 )
 opt <- parse_args(OptionParser(option_list = option_list))
 
-kr <- read.delim(opt$kraken_report, header = F)
+kr <- read.delim(opt$kraken_report, header = FALSE)
 kr <- kr[-c(1:2), ]
-mpa <- read.delim(opt$mpa_report, header = F)
-n <- str_which(mpa$V1, "k__Bacteria|k__Fungi|k__Viruses")
+mpa <- read.delim(opt$mpa_report, header = FALSE)
+n <- str_which(mpa$V1, "(?i)Bacteria|Fungi|Viruses")
 taxid <- kr$V7[n]
 taxid.list <- split(taxid, ceiling(seq_along(taxid) / opt$ntaxid))
 
-if (file.exists(paste0(opt$out_path, opt$sample_name, ".microbiome.output.txt"))) {
-  system(paste0("rm ", opt$out_path, opt$sample_name, ".microbiome.output.txt"))
+file_name <- paste0(opt$sample_name, ".microbiome.output.txt")
+if (file.exists(file.path(opt$out_path, file_name))) {
+  file.remove(file.path(opt$out_path, file_name))
 }
 
-for (i in 1:length(taxid.list)) {
+for (i in seq_along(taxid.list)) {
   print(paste("Extracting output data", i, "/", length(taxid.list)))
 
   taxid <- paste0("(taxid ", taxid.list[[i]], ")", collapse = "\\|")
   taxid <- paste0("'", taxid, "'")
-  str <- paste0("grep -w ", taxid, " ", opt$output_file, " >> ", opt$out_path, opt$sample_name, ".microbiome.output.txt")
+  str <- paste0(
+    "grep -w ", taxid, " ", opt$output_file, " >> ",
+    file.path(opt$out_path, file_name)
+  )
   system(str)
 }
 
-if (opt$keep_original == F) {
-  system(paste("rm", opt$output_file))
+if (opt$keep_original == FALSE) {
+  file.remove(opt$output_file)
 }
 
 print("Done")

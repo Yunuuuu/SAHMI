@@ -9,23 +9,23 @@ option_list <- list(
   make_option(c("--kraken_report"), action = "store", help = "path to standard kraken report"),
   make_option(c("--mpa_report"), action = "store", help = "path to standard kraken mpa report"),
   make_option(c("--out_path"), action = "store", help = "output path"),
-  make_option(c("--keep_original"), action = "store", default = T, help = "delete original fastq file? T/F"),
+  make_option(c("--keep_original"), action = "store", default = TRUE, help = "delete original fastq file? T/F"),
   make_option(c("--ntaxid"), action = "store", default = 7000, help = "number of taxids to extract at a time")
 )
 opt <- parse_args(OptionParser(option_list = option_list))
 
-kr <- read.delim(opt$kraken_report, header = F)
+kr <- read.delim(opt$kraken_report, header = FALSE)
 kr <- kr[-c(1:2), ]
-mpa <- read.delim(opt$mpa_report, header = F)
-n <- str_which(mpa$V1, "k__Bacteria|k__Fungi|k__Viruses")
+mpa <- read.delim(opt$mpa_report, header = FALSE)
+n <- str_which(mpa$V1, "(?i)Bacteria|Fungi|Viruses")
 taxid <- kr$V7[n]
 taxid.list <- split(taxid, ceiling(seq_along(taxid) / opt$ntaxid))
-
-if (file.exists(paste0(opt$out_path, opt$sample_name, "_line_numbers.txt"))) {
-  system(paste0("rm ", opt$out_path, opt$sample_name, "_line_numbers.txt"))
+file_name <- paste0(opt$sample_name, "_line_numbers.txt")
+if (file.exists(file.path(opt$out_path, file_name))) {
+  file.remove(file.path(opt$out_path, file_name))
 }
 
-for (i in 1:length(taxid.list)) {
+for (i in seq_along(taxid.list)) {
   print(paste("Finding reads", i, "/", length(taxid.list)))
 
   taxid <- paste0("taxid|", taxid.list[[i]], collapse = "\\|")
@@ -34,25 +34,35 @@ for (i in 1:length(taxid.list)) {
   system(str)
 }
 
-h <- read.delim(paste0(opt$out_path, opt$sample_name, "_line_numbers.txt"), header = F)
+h <- read.delim(file.path(opt$out_path, file_name), header = FALSE)
 r <- h$V1 + 1
 d <- data.frame(h = h$V1, r = r) %>%
   rownames_to_column("n") %>%
   pivot_longer(-n)
-write.table(d$value, file = paste0(opt$out_path, opt$sample_name, "_line_numbers.txt"), row.names = F, col.names = F)
+write.table(d$value,
+  file = file.path(opt$out_path, file_name),
+  row.names = FALSE, col.names = FALSE
+)
 
 print("Extracting reads")
-str <- paste0("awk 'NR==FNR{ a[$1]; next }FNR in a' ", opt$out_path, opt$sample_name, "_line_numbers.txt ", opt$fq, " > ", opt$out_path, opt$sample_name, ".fa")
+str <- paste0(
+  "awk 'NR==FNR{ a[$1]; next }FNR in a' ",
+  file.path(opt$out_path, file_name), " ",
+  opt$fq, " > ",
+  file.path(opt$out_path, paste0(opt$sample_name, ".fa"))
+)
 system(str)
 
-str <- paste0("sed -i 's/@/>/g' ", opt$out_path, opt$sample_name, ".fa")
+str <- paste0(
+  "sed -i 's/@/>/g' ",
+  file.path(opt$out_path, paste0(opt$sample_name, ".fa"))
+)
 system(str)
 
-str <- paste0(opt$out_path, opt$sample_name, "_line_numbers.txt")
-system(paste("rm", str))
+file.remove(file.path(opt$out_path, file_name))
 
-if (opt$keep_original == F) {
-  system(paste("rm", fq))
+if (!as.logical(opt$keep_original)) {
+  file.remove(opt$fq)
 }
 
 print("Done")

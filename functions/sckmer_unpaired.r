@@ -137,7 +137,7 @@ for (taxa in tx) {
   if (nrow(out) > opt$nsample) {
     n <- sample(nrow(out), opt$nsample)
   } else {
-    n <- 1:nrow(out)
+    n <- seq_len(nrow(out))
   }
   counter2 <- 0
 
@@ -167,12 +167,16 @@ for (taxa in tx) {
 
       if (nrow(r) > 0) {
         kmer <- c()
-        for (k in 1:nrow(r)) {
+        for (k in seq_len(nrow(r))) {
           for (m in 1:r$nkmer[k]) {
             kmer <- c(kmer, substr(seq[[mate]][i], r$nt_start[k] + m - 1, r$nt_start[k] + m + opt$kmer_len - 2))
           }
         }
-        tax.df[[counter2]] <- data.frame(barcode = barcode.x[i], taxid = taxa, k = kmer, n = sum(r$nt_len[r$taxid %in% lin]))
+        tax.df[[counter2]] <- data.frame(
+          barcode = barcode.x[i],
+          taxid = taxa, k = kmer,
+          n = sum(r$nt_len[r$taxid %in% lin])
+        )
       } else {
         tax.df[[counter2]] <- data.frame(barcode = barcode.x[i], taxid = taxa, k = NA, n = NA)
       }
@@ -197,7 +201,7 @@ for (taxa in tx) {
   # cat('\n')
 }
 
-barcode_kmer <- rbindlist(barcode_kmer)
+barcode_kmer <- data.table::rbindlist(barcode_kmer)
 
 # c = barcode_kmer %>%
 #   subset(kmer > 1) %>%
@@ -209,6 +213,9 @@ barcode_kmer <- rbindlist(barcode_kmer)
 #             p = cor.test(kmer, uniq, method = 'spearman', use = 'pairwise.complete')$p.value) %>%
 #   mutate(p = p.adjust(p))
 
-write.table(barcode_kmer, file = paste0(opt$out_path, opt$sample_name, ".sckmer.txt"), quote = F, row.names = F)
+write.table(barcode_kmer,
+  file = file.path(opt$out_path, paste0(opt$sample_name, ".sckmer.txt")),
+  quote = FALSE, row.names = FALSE
+)
 
 paste("Done")

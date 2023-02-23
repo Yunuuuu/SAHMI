@@ -61,11 +61,11 @@ sequences1 <- sequences1[ii]
 ii <- which(id2 %in% i)
 sequences2 <- sequences2[ii]
 
-kr <- read.delim(opt$kraken_report, header = F)
+kr <- read.delim(opt$kraken_report, header = FALSE)
 kr <- kr[-c(1:2), ] %>%
   mutate(V8 = trimws(V8)) %>%
   mutate(V8 = str_replace_all(V8, "[^[:alnum:]]", "_"))
-mpa <- read.delim(opt$mpa_report, header = F)
+mpa <- read.delim(opt$mpa_report, header = FALSE)
 mpa$taxid <- NA
 
 for (i in 2:nrow(mpa)) {
@@ -78,7 +78,7 @@ for (i in 2:nrow(mpa)) {
   mpa$taxid[i] <- paste0("*", paste(kr$V7[match(t_names, kr$V8)], collapse = "*"), "*")
 }
 
-microbiome_output_file <- read.delim(opt$microbiome_output_file, header = F)
+microbiome_output_file <- read.delim(opt$microbiome_output_file, header = FALSE)
 
 microbiome_output_file <- microbiome_output_file %>%
   select(-V1) %>%
@@ -138,7 +138,7 @@ for (taxa in tx) {
   if (nrow(out) > opt$nsample) {
     n <- sample(nrow(out), opt$nsample)
   } else {
-    n <- 1:nrow(out)
+    n <- seq_len(nrow(out))
   }
   counter2 <- 0
 
@@ -151,7 +151,7 @@ for (taxa in tx) {
 
       r <- r %>%
         mutate(
-          fkmer = nkmer / sum(nkmer),
+          fkmer = nkmer / sum(nkmer, na.rm = TRUE),
           nt_start = cumsum(nkmer) - nkmer + 1,
           nt_end = cumsum(nkmer) + opt$kmer_len - 1
         ) %>%
@@ -160,7 +160,7 @@ for (taxa in tx) {
         # subset(taxid == taxa)
         subset(taxid %in% c(0, full.lin))
 
-      if (sum(r$fkmer) < opt$min_frac) {
+      if (sum(r$fkmer, na.rm = TRUE) < opt$min_frac) {
         next
       }
 
@@ -168,12 +168,17 @@ for (taxa in tx) {
 
       if (nrow(r) > 0) {
         kmer <- c()
-        for (k in 1:nrow(r)) {
+        for (k in seq_len(nrow(r))) {
           for (m in 1:r$nkmer[k]) {
             kmer <- c(kmer, substr(seq[[mate]][i], r$nt_start[k] + m - 1, r$nt_start[k] + m + opt$kmer_len - 2))
           }
         }
-        tax.df[[counter2]] <- data.frame(barcode = barcode.x[i], taxid = taxa, k = kmer, n = sum(r$nt_len[r$taxid %in% lin]))
+        tax.df[[counter2]] <- data.frame(
+          barcode = barcode.x[i],
+          taxid = taxa,
+          k = kmer,
+          n = sum(r$nt_len[r$taxid %in% lin])
+        )
       } else {
         tax.df[[counter2]] <- data.frame(barcode = barcode.x[i], taxid = taxa, k = NA, n = NA)
       }
@@ -198,7 +203,7 @@ for (taxa in tx) {
   # cat('\n')
 }
 
-barcode_kmer <- rbindlist(barcode_kmer)
+barcode_kmer <- data.table::rbindlist(barcode_kmer)
 
 # c = barcode_kmer %>%
 #   subset(kmer > 1) %>%
@@ -210,6 +215,9 @@ barcode_kmer <- rbindlist(barcode_kmer)
 #             p = cor.test(kmer, uniq, method = 'spearman', use = 'pairwise.complete')$p.value) %>%
 #   mutate(p = p.adjust(p))
 
-write.table(barcode_kmer, file = paste0(opt$out_path, opt$sample_name, ".sckmer.txt"), quote = F, row.names = F)
+write.table(barcode_kmer,
+  file = file.path(opt$out_path, paste0(opt$sample_name, ".sckmer.txt")),
+  quote = FALSE, row.names = FALSE
+)
 
 paste("Done")
